@@ -79,7 +79,15 @@ def open_xml(file_path):
     else:
         f = get_file(file_path)
         print(f'{file_path}: opened local file')
-    return etree.parse(f, etree.XMLParser(huge_tree=True, remove_blank_text=True, resolve_entities=True)).getroot()
+    try:
+        root = etree.parse(f, etree.XMLParser(recover=True, huge_tree=True, remove_blank_text=True, resolve_entities=True)).getroot()
+        return root
+    except etree.XMLSyntaxError as e:
+        print(f'{e} - skipping')
+        return None
+    except Exception as e:
+        print(e)
+        sys.exit(e)
 
 def get_channels_programs(file_path):
     global trim, output_channels, output_programs
@@ -129,6 +137,13 @@ def old_program(timestr):
         return True
     return False
 
+def create_xml_tree(channels, programs):
+    root = etree.Element('tv')
+    root.extend(channels)
+    for program in programs.values():
+        root.extend(program)
+    return root
+
 def write_xml(output_path, gzipped, root):
     root.set('generator-info-name', "broken-droid/xmltools")
     now = round(datetime.now().timestamp())
@@ -144,16 +159,13 @@ def write_xml(output_path, gzipped, root):
     except Exception as e:
         sys.exit(e)
 
-def main():
+def xmlmerge():
     global files, output, gzipped, output_channels, output_programs
     if gzipped: output = output+".gz"
     for file in files:
         get_channels_programs(file)
-    root = etree.Element('tv') # build tree
-    root.extend(output_channels) # add channels
-    for plist in output_programs.values(): # add programs
-        root.extend(plist)
+    root = create_xml_tree(output_channels, output_programs)
     write_xml(output, gzipped, root)
 
 if __name__ == '__main__':
-    main()
+    xmlmerge()
