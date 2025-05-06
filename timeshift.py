@@ -13,12 +13,11 @@ from datetime import datetime, timedelta
 channels = { # edit this
 }
 output = 'shift.xml' # file to write, edit this
-
 output_root = etree.Element('tv') # root node for output
 output_programs = [] # hold program elements to write
 output_channels = [] # hold channel elements to write
 
-def main():
+def timeshift():
     for fname, data in channels.items():
         process_file(fname, data)
     finish_and_write()
@@ -68,4 +67,4 @@ def process_file(input, data):
         output_programs.append(input_programs)
 
 if __name__ == '__main__':
-    main()
+    timeshift()
