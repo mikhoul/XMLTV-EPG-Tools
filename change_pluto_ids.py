@@ -1,10 +1,7 @@
 import sys
 from lxml import etree
 from xmlmerge import open_xml, write_xml
-# Rename channel id's from jibberish to something recognizable.
-# This was made specifically for pluto and roku xml files from 
-# i.mhj.nz, and will probably break on anything else.
-# Needs xmlmerge.py for open and write
+# Rename channel id's from jibberish to something recognizable
 # from  <channel id="673247127d5da5000817b4d6">
 #           <display-name>Pluto TV Trending Now</display-name>
 # to <channel id="Pluto.TV.Trending.Now.pluto">
@@ -14,7 +11,7 @@ def change_pluto_ids():
     gzipped = False
 # [ [input_path, suffix, output_path] ...]
     files = [ # leaving these inputs here since these were the only thing I was using this for
-        ['https://i.mjh.nz/PlutoTV/us.xml.gz', '.pluto', '/i.mjh.nz_PlutoTV_us.mod.xml.gz'],
+        ['https://i.mjh.nz/PlutoTV/us.xml.gz', '.pluto', 'i.mjh.nz_PlutoTV_us.mod.xml.gz'],
         ['https://i.mjh.nz/Roku/all.xml.gz', '.roku', 'i.mjh.nz_Roku_all.mod.xml.gz']
     ]
     output_programs = []
