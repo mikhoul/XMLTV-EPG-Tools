@@ -1,3 +1,4 @@
+[![](https://storage.ko-fi.com/cdn/kofi5.png?v=6)](https://ko-fi.com/X8X81ELTUM)
 # xmltools
 
 ## xmlmerge
