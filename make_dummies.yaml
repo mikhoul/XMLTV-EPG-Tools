@@ -1,0 +1,14 @@
+dummies:
+  - 
+    - "2" # hours each program lasts
+    - "err-dummy" # dummy channel id
+    - "Error" # dummy channel name
+    - "No Signal." # dummy channel title
+    - "No Signal. Channel might be removed." # dummy channel description
+#    - dummy channelicon url - optional
+  - 
+    - "2"
+    - "freenews-dummy"
+    - "freenews"
+    - "News only. No Events."
+    - "Public internet feed. News only. No events."
