@@ -6,17 +6,24 @@ import os
 import re
 from urllib.parse import urlparse
 import sys
-
-updatetime = 20 # fetch new remote files after the local copy is this many hours old
-trim = False # cut program elements older than now
-output = "merged.xml" # output file name, .gz will be added if gzipped
-gzipped=True # gzip output y/n
-files = [ # [ 'url/file', 'url/file', ... ]
-#    "https://example.com/path/file.xml.gz",
-#    "C:/example/myfile.xml.gz"
-]
+import yaml
 output_programs = [] # hold program elements to write
 output_channels = [] # hold channel elements to write
+updatetime = 20 # downloaded files are stale after this many hours
+trim = False # cut program elements older than now
+output = 'merged.xml' # output file name, .gz will be added if gzipped
+gzipped=True # gzip output y/n
+input_file = 'xmlmerge.yaml' # input, yaml format
+output_programs = [] # hold program elements to write
+output_channels = [] # hold channel elements to write
+
+def read_input(file_name):
+    try:
+        with open(file_name,'rt') as f:
+            return yaml.safe_load(f)['files']
+    except Exception as e:
+        print(f"Error opening {file_name}: {e}")
+        sys.exit(e)
 
 def get_file(file_name):
     try:
@@ -160,7 +167,9 @@ def write_xml(output_path, gzipped, root):
         sys.exit(e)
 
 def xmlmerge():
-    global files, output, gzipped, output_channels, output_programs
+    files = []
+    global input_file, output, gzipped, output_channels, output_programs
+    files = read_input(input_file)
     if gzipped: output = output+".gz"
     for file in files:
         get_channels_programs(file)
