@@ -23,11 +23,13 @@ from xmlmerge import open_xml, write_xml
 def change_gracenote_ids():
     gzipped = False
 # leaving this input, it's the only thing it's used for
+    cache_path = 'cache/' # path to stored input files
+    output_path = 'cache/' # path to output file, I want to merge this with other files
     input = 'https://github.com/acidjesuz/EPGTalk/raw/refs/heads/master/guide.xml.gz' # input file
     output = 'github.com_acidjesuz_EPGTalk_raw_refs_heads_master_guide.mod.xml.gz' # output file
     output_programs = []
     tree = etree.Element('tv')
-    root = open_xml(input)
+    root = open_xml(input, cache_path)
     try:
         channels = root.findall('channel')
         tree.extend(channels)
@@ -56,7 +58,7 @@ def change_gracenote_ids():
         sys.exit(e)
     if '.gz' in input:
         gzipped = True
-    write_xml(output, gzipped, tree)
+    write_xml(output_path+output, gzipped, tree)
 
 if __name__ == '__main__':
     change_gracenote_ids()

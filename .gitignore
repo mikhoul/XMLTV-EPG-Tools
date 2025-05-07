@@ -1,0 +1,5 @@
+xmlmerge.yaml
+timeshift.yaml
+output/*
+cache/*
+__pycache__/*

@@ -1,17 +1,15 @@
 from lxml import etree
 from datetime import datetime, timedelta
 import pytz
-from xmlmerge import write_xml
-# Make some dummy program entries for the specified number of
-# days with the channel ids, names, titles, descriptions
-# Needs xmlmerge.py for write
-output = 'dummy.xml'
-future_days = 2
-# length(hours)|id|name|title|desc|icon
-dummies = [
-    '2|err-dummy|Error|No Signal.|No Signal.  Channel might be removed.|',
-    '2|freenews-dummy|freenews|News only.  No Events.|Public internet feed.  News only.  No events.|',
-]
+from xmlmerge import write_xml, read_yaml_input
+# Make some dummy program entries for the specified number of days
+# with the channel ids, names, titles, descriptions, and optional icons
+# Needs xmlmerge.py for write_xml, and read_yaml_input functions
+output_path = 'cache/' # path to output file, I want to merge this with other files
+output = 'dummy.xml' # output file name, .gz will be added if gzipped
+input_file = 'make_dummies.yaml' # input, yaml format, description in the file
+future_days = 2 # how many days worth of programs to create
+
 def create_dummy_program(start, stop, channel_id, title, desc, categories, icon_url):
     program = etree.Element('programme')
     program.set('channel', channel_id)
@@ -70,19 +68,23 @@ def make_channel_element(id, names, icon):
     return chan
 
 def make_dummies():
-    global dummies, output
+    global input_file, output_path, output
     elements = []
+    dummies = read_yaml_input(input_file)['dummies']
     for dummy in dummies:
-        dummy = dummy.split('|')
-        icon_url = dummy.pop()
-        desc = dummy.pop()
-        title = dummy.pop()
-        channel_name = dummy.pop()
-        channel_id = dummy.pop()
-        hrs = dummy.pop()
-        elements = elements+(future_dummies(hrs, channel_id, channel_name, title, desc, icon_url))
+        hrs = dummy[0]
+        channel_id = dummy[1]
+        channel_name = dummy[2]
+        title = dummy[3]
+        desc = dummy[4]
+        icon = None
+        try:
+            icon = dummy[5]
+        except IndexError:
+            icon = None
+        elements = elements+(future_dummies(hrs, channel_id, channel_name, title, desc, icon))
     root = make_tree(elements)
-    write_xml(output,False,root)
+    write_xml(output_path+output,False,root)
 
 if __name__ == "__main__":
     make_dummies()

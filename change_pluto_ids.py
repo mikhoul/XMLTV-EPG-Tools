@@ -14,10 +14,12 @@ def change_pluto_ids():
         ['https://i.mjh.nz/PlutoTV/us.xml.gz', '.pluto', 'i.mjh.nz_PlutoTV_us.mod.xml.gz'],
         ['https://i.mjh.nz/Roku/all.xml.gz', '.roku', 'i.mjh.nz_Roku_all.mod.xml.gz']
     ]
+    cache_path = 'cache/' # path to stored input files
+    output_path = 'cache/' # path to output file, I want to merge this with other files
     output_programs = []
     tree = etree.Element('tv')
     for file, suffix, outpath in files:
-        root = open_xml(file)
+        root = open_xml(file, cache_path)
         try:
             channels = root.findall('channel')
             tree.extend(channels)
@@ -38,7 +40,7 @@ def change_pluto_ids():
             sys.exit(e)
         if '.gz' in file:
             gzipped = True
-        write_xml(outpath, gzipped, tree)
+        write_xml(output_path+outpath, gzipped, tree)
 
 if __name__ == '__main__':
     change_pluto_ids()

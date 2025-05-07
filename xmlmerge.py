@@ -7,20 +7,20 @@ import re
 from urllib.parse import urlparse
 import sys
 import yaml
-output_programs = [] # hold program elements to write
-output_channels = [] # hold channel elements to write
-updatetime = 20 # downloaded files are stale after this many hours
-trim = False # cut program elements older than now
-output = 'merged.xml' # output file name, .gz will be added if gzipped
+updatetime = 20 # download new files if older than this (hours)
+trim = False # cut program elements older than current time
 gzipped=True # gzip output y/n
-input_file = 'xmlmerge.yaml' # input, yaml format
+output_path = 'output/' # path to output files
+cache_path = 'cache/' # path to stored input files
+output = 'merged.xml' # output file name, .gz will be added if gzipped
+input_file = 'xmlmerge.yaml' # input, yaml format, description in the file
 output_programs = [] # hold program elements to write
 output_channels = [] # hold channel elements to write
 
-def read_input(file_name):
+def read_yaml_input(file_name):
     try:
         with open(file_name,'rt') as f:
-            return yaml.safe_load(f)['files']
+            return yaml.safe_load(f)
     except Exception as e:
         print(f"Error opening {file_name}: {e}")
         sys.exit(e)
@@ -34,17 +34,17 @@ def get_file(file_name):
         print(f"Error opening {file_name}: {e}")
         sys.exit(e)
 
-def get_url(url):
+def get_url(url, cache_path):
     try:
         response = requests.get(url)
         response.raise_for_status()
-        file_name = url_to_filename(url)
-        if file_name.endswith('.gz'):
+        file_name = cache_path + url_to_filename(url)
+        if file_name.endswith('.gz'): # write directly if it was .gz
             f = open(file_name, 'wb')
             f.write(response.content)
             f.close()
             return gzip.open(file_name, 'rt', encoding='utf-8', newline=None)
-        else:
+        else: # compress a plain xml that was downloaded
             file_name = file_name+'.gz'
             f = gzip.open(file_name, 'wb')
             f.write(response.content)
@@ -73,19 +73,19 @@ def url_to_filename(url): # make a string out of a url to use as a file name
         filename = 'default_filename.xml'
     return filename
 
-def open_xml(file_path):
+def open_xml(file_path, cache_path):
     f = None
     if file_path.startswith('http://') or file_path.startswith('https://'):
         file_name = url_to_filename(file_path)
-        if check_file(file_name):
-            f = get_file(file_name)
+        if check_file(cache_path+file_name):
+            f = get_file(cache_path+file_name)
             print(f'{file_path}: downloaded recently, using local copy')
         else:
-            f = get_url(file_path)
+            f = get_url(file_path, cache_path)
             print(f'{file_path}: dowloaded local copy')
     else:
-        f = get_file(file_path)
-        print(f'{file_path}: opened local file')
+        f = get_file(cache_path+file_path)
+        print(f'{cache_path+file_path}: opened local file')
     try:
         root = etree.parse(f, etree.XMLParser(recover=True, huge_tree=True, remove_blank_text=True, resolve_entities=True)).getroot()
         return root
@@ -96,9 +96,9 @@ def open_xml(file_path):
         print(e)
         sys.exit(e)
 
-def get_channels_programs(file_path):
+def get_channels_programs(file_path, cache_path):
     global trim, output_channels, output_programs
-    root = open_xml(file_path)
+    root = open_xml(file_path, cache_path)
     programs = {}
     for element in root: # go through all elements
         if element.tag == 'channel': # channel elements
@@ -167,12 +167,11 @@ def write_xml(output_path, gzipped, root):
         sys.exit(e)
 
 def xmlmerge():
-    files = []
-    global input_file, output, gzipped, output_channels, output_programs
-    files = read_input(input_file)
+    global input_file, output, gzipped, output_channels, output_programs, cache_path
+    files = read_yaml_input(input_file)['files']
     if gzipped: output = output+".gz"
     for file in files:
-        get_channels_programs(file)
+        get_channels_programs(file, cache_path)
     root = create_xml_tree(output_channels, output_programs)
     write_xml(output, gzipped, root)
 

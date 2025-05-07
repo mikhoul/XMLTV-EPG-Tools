@@ -1,23 +1,22 @@
-from xmlmerge import open_xml, write_xml
+from xmlmerge import open_xml, write_xml, read_yaml_input
 from lxml import etree
 from datetime import datetime, timedelta
-# pull out channels/programs with matching ids from an xml file and timeshift the specified hours
-# write those channels/programs to 'output' with altered name and id
-# needs xmlmerge.py for open and write
+# Pull out channels/programs with matching ids from an xml file and timeshift the 
+# specified hours. Write those channels/programs to 'output' with altered name and id.
+# needs xmlmerge.py for open_xml, write_xml, read_yaml_input
 
-# { file/url : [list of New Name|id|new_id|shift_hours], ... }
-# ex: channels = {'https://epgshare01.online/epgshare01/epg_ripper_US1.xml.gz': [
-#    'Animal Planet West|Animal.Planet.US.-.East.us|Animal.Planet.West.shift|3'
-# ] }
-
-channels = { # edit this
-}
-output = 'shift.xml' # file to write, edit this
+# timeshift.yaml for input
+cache_path = 'cache/' # path to input files, edit this
+output_path = 'cache/' # path to output, I want to merge this with other files
+output = f'{output_path}shift.xml' # file to write, edit this
 output_root = etree.Element('tv') # root node for output
 output_programs = [] # hold program elements to write
 output_channels = [] # hold channel elements to write
+channels = {} # hold input data from yaml
 
 def timeshift():
+    global channels, cache_path
+    channels = read_yaml_input('timeshift.yaml')['channels']
     for fname, data in channels.items():
         process_file(fname, data)
     finish_and_write()
@@ -46,10 +45,9 @@ def finish_and_write():
     write_xml(output, False, output_root)
 
 def process_file(input, data):
-    global output_root, output_channels, output_programs
-    input_root = open_xml(input)
+    global output_root, output_channels, output_programs, cache_path
+    input_root = open_xml(input, cache_path)
     for channel in data:
-        channel = channel.split('|')
         channel_name = channel[0]
         channel_id = channel[1]
         new_id = channel[2]
