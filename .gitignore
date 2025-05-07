@@ -3,3 +3,4 @@ timeshift.yaml
 output/*
 cache/*
 __pycache__/*
+xmltools.code-workspace
