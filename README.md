@@ -16,3 +16,6 @@ Similar to the change_pluto_ids, but made to work with a file from the acidjesuz
 
 ## make_dummies
 Make dummy programs with the specified details.  Uses make_dummies.yaml for input.
+
+## driver
+An example driver script to chain these scripts together to run in order.  You need to configure each script first.
