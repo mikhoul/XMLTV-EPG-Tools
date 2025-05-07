@@ -77,15 +77,15 @@ def open_xml(file_path, cache_path):
     f = None
     if file_path.startswith('http://') or file_path.startswith('https://'):
         file_name = url_to_filename(file_path)
-        if check_file(cache_path+file_name):
-            f = get_file(cache_path+file_name)
+        if check_file(cache_path+file_name): # check cached file, and age
+            f = get_file(cache_path+file_name) # return local copy
             print(f'{file_path}: downloaded recently, using local copy')
         else:
-            f = get_url(file_path, cache_path)
+            f = get_url(file_path, cache_path) # download new file
             print(f'{file_path}: dowloaded local copy')
     else:
-        f = get_file(cache_path+file_path)
-        print(f'{cache_path+file_path}: opened local file')
+        f = get_file(file_path) # use specified path for local files, no cache
+        print(f'{file_path}: opened local file')
     try:
         root = etree.parse(f, etree.XMLParser(recover=True, huge_tree=True, remove_blank_text=True, resolve_entities=True)).getroot()
         return root
@@ -167,13 +167,13 @@ def write_xml(output_path, gzipped, root):
         sys.exit(e)
 
 def xmlmerge():
-    global input_file, output, gzipped, output_channels, output_programs, cache_path
+    global input_file, output, gzipped, output_channels, output_programs, cache_path, output_path
     files = read_yaml_input(input_file)['files']
     if gzipped: output = output+".gz"
     for file in files:
         get_channels_programs(file, cache_path)
     root = create_xml_tree(output_channels, output_programs)
-    write_xml(output, gzipped, root)
+    write_xml(output_path+output, gzipped, root)
 
 if __name__ == '__main__':
     xmlmerge()
