@@ -1,0 +1,7 @@
+# channels:
+#   "file/url"
+#     -
+#       - New channel display name to write in modified output file
+#       - existing channel/program id to find in this file
+#       - new channel id to write in modified output file
+#       - number of hours to shift, positive moves timezone west, negative moves east
