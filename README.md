@@ -10,7 +10,7 @@ Merge multiple xmltv files.  Opens and writes uncompressed or gzipped xml.  Remo
 |trim|boolean - remove programs older than the current time|
 |gzipped|boolean - compress output
 |output| output file name
-|input| yaml file to read
+|input_file| yaml file to read
 
 ## timeshift
 Pull channels and programs out of an existing xml file, change the air time for the programs, and write them to the output file.
