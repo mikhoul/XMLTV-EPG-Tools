@@ -1,6 +1,8 @@
-xmlmerge.yaml
-timeshift.yaml
-output/*
-cache/*
 __pycache__/*
 xmltools.code-workspace
+output/*
+!output/.gitkeep
+cache/*
+!cache/.gitkeep
+
+
