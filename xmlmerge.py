@@ -152,7 +152,7 @@ def create_xml_tree(channels, programs):
     return root
 
 def write_xml(output_path, gzipped, root):
-    root.set('generator-info-name', "broken-droid/xmltools")
+    root.set('generator-info-name', "mikhoul/XMLTV-EPG")
     now = round(datetime.now().timestamp())
     root.set('generated-ts', f'{now}')
     tree = etree.ElementTree(root)
