@@ -2,8 +2,8 @@ name: Daily XMLTV Merger
 
 on:
   schedule:
-    # 4 PM Eastern Time is 20:00 UTC during EDT (UTC-4)
-    - cron:  '0 20 * * *'
+    # 4 PM Eastern Time is 20:00 UTC
+    - cron: '0 20 * * *'
   workflow_dispatch:
 
 jobs:
@@ -32,13 +32,11 @@ jobs:
           CACHE_PATH: cache/
           OUTPUT_PATH: output/
         run: |
-          # Ensure cache/output directories exist
           mkdir -p cache output
-          # Execute merger
           python xmlmerge.py
 
       - name: Upload merged EPG
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: merged-xmltv-epg
-          path: output/merged.xml{{ '.gz' if gzipped else '' }}
+          path: output/merged.xml.gz
