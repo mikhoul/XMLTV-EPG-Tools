@@ -2,7 +2,6 @@ __pycache__/*
 xmltools.code-workspace
 output/*
 !output/.gitkeep
-cache/*
 !cache/.gitkeep
 
 
