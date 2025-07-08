@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
+
 """
 xmlmerge.py
 
 Merge multiple XMLTV EPG sources into a single, well-formed, normalized XMLTV file.
 
 Enhancements:
-  - Structured logging for fetch/parse durations, element counts, and fix counts
-  - Logs duplicate channels skipped per source, explicitly stating when none were found
-  - Logs each pruned programme for missing channels
+- Structured logging for fetch/parse durations, element counts, and fix counts
+- Logs duplicate channels skipped per source, explicitly stating when none were found
+- Logs each pruned programme for missing channels
 """
 
 import gzip
@@ -20,25 +21,26 @@ import logging
 from datetime import datetime
 from lxml import etree
 from urllib.parse import urlparse
+import xml.sax.saxutils as saxutils      # <— NEW: import for ID normalization
 
 # --- Configuration ---
-updatetime     = 4               # hours before cache refresh
-trim           = False           # drop programmes older than now
-gzipped_out    = True            # gzip final output
-output_path    = 'output/'       # output directory
-cache_path     = 'cache/'        # cache directory
-input_file     = 'xmlmerge.yaml' # YAML source list
-base_filename  = 'merged.xml'    # output filename base
+updatetime = 4       # hours before cache refresh
+trim = False         # drop programmes older than now
+gzipped_out = True   # gzip final output
+output_path = 'output/'    # output directory
+cache_path = 'cache/'      # cache directory
+input_file = 'xmlmerge.yaml'   # YAML source list
+base_filename = 'merged.xml'   # output filename base
 
 # Global data holders
-output_channels  = []            # list of <channel> elements
-output_programs  = {}            # dict: channel_id → list of <programme> elements
-seen_channel_ids = set()         # for channel deduplication
+output_channels = []          # list of <channel> elements
+output_programs = {}          # dict: channel_id → list of <programme> elements
+seen_channel_ids = set()      # for channel deduplication
 
 # Regex patterns
-tz_pattern   = re.compile(r'([+-])(\d{1,2}):(\d{2})$')
-sci_full     = re.compile(r'(\d+\.\d+e[+-]\d+)(?:\s*([+-]\d{4}))?$', re.IGNORECASE)
-amp_pattern  = re.compile(r'&(?!amp;|lt;|gt;|quot;|apos;)')
+tz_pattern = re.compile(r'([+-])(\d{1,2}):(\d{2})$')
+sci_full = re.compile(r'(\d+\.\d+e[+-]\d+)(?:\s*([+-]\d{4}))?$', re.IGNORECASE)
+amp_pattern = re.compile(r'&amp;(?!amp;|lt;|gt;|quot;|apos;)')
 
 # --- Logging Setup ---
 logging.basicConfig(
@@ -47,6 +49,14 @@ logging.basicConfig(
     datefmt='%Y-%m-%dT%H:%M:%S'
 )
 logger = logging.getLogger(__name__)
+
+
+def normalize_id(raw_id):
+    """
+    Convert XML escaped IDs to normalized form: unescape '&amp;' → '&', strip whitespace.
+    """
+    return saxutils.unescape(raw_id).strip()
+
 
 def read_yaml_input(path):
     """Load YAML file listing XMLTV source URLs or paths."""
@@ -57,20 +67,23 @@ def read_yaml_input(path):
         logger.error("Error reading %s: %s", path, e)
         sys.exit(1)
 
+
 def url_to_filename(url):
     """Convert a URL to a safe cache filename."""
     parsed = urlparse(url)
     fname = f"{parsed.netloc}{parsed.path}"
     return re.sub(r'[<>:"/\\|?*]', '_', fname) or 'default.xml'
 
+
 def is_fresh(fname):
     """Return cached path if fresh (younger than updatetime), else None."""
     now = datetime.now().timestamp()
     for suffix in ('', '.gz'):
         full = cache_path + fname + suffix
-        if os.path.exists(full) and os.path.getmtime(full) + updatetime*3600 > now:
+        if os.path.exists(full) and os.path.getmtime(full) + updatetime * 3600 > now:
             return full
     return None
+
 
 def fetch_to_cache(url):
     """Download URL content and cache it, logging duration."""
@@ -89,6 +102,7 @@ def fetch_to_cache(url):
     except Exception as e:
         logger.error("Error fetching %s: %s", url, e)
         return None
+
 
 def open_xml(source):
     """Open and parse XMLTV source from URL or local file, logging load time."""
@@ -112,7 +126,6 @@ def open_xml(source):
 
     if fh is None:
         return None
-
     try:
         parser = etree.XMLParser(recover=True, huge_tree=True, remove_blank_text=True)
         return etree.parse(fh, parser).getroot()
@@ -120,11 +133,11 @@ def open_xml(source):
         logger.error("XML parse error in %s: %s", source, e)
         return None
 
+
 def get_channels_programs(source):
     """
     Extract <channel> and <programme> elements from one source.
-    Logs counts, duplicates skipped (explicitly noting zero duplicates),
-    and parse duration.
+    Logs counts, duplicates skipped, and parse duration.
     """
     parse_start = datetime.now()
     root = open_xml(source)
@@ -144,6 +157,7 @@ def get_channels_programs(source):
                 else:
                     logger.info("Duplicate channel skipped: %s (from %s)", cid, source)
                     ch_dupes += 1
+
         elif elem.tag == 'programme':
             ch = elem.get('channel')
             if trim:
@@ -169,6 +183,7 @@ def get_channels_programs(source):
             source, ch_new, pr_count, duration
         )
 
+
 def normalize_timezones(root):
     """Convert time-zone offsets and log count."""
     fixes = 0
@@ -181,6 +196,7 @@ def normalize_timezones(root):
                     prog.set(attr, fixed)
                     fixes += 1
     logger.info("Applied %d timezone normalizations", fixes)
+
 
 def normalize_exponents(root):
     """Convert scientific-notation timestamps to fixed-width strings."""
@@ -197,6 +213,7 @@ def normalize_exponents(root):
                 fixes += 1
     logger.info("Converted %d scientific-notation timestamps", fixes)
 
+
 def escape_specials(root):
     """Strip CDATA and escape ampersands in attributes."""
     fixes = 0
@@ -205,10 +222,11 @@ def escape_specials(root):
             el.text = str(el.text)
             fixes += 1
         for a, v in list(el.attrib.items()):
-            if '&' in v and not v.startswith('&amp;'):
-                el.attrib[a] = v.replace('&', '&amp;')
+            if '&amp;' in v and not v.startswith('&amp;'):
+                el.attrib[a] = v.replace('&amp;', '&amp;')
                 fixes += 1
     logger.info("Applied %d CDATA/attribute escapes", fixes)
+
 
 def fix_chronology(root):
     """Remove programmes where stop ≤ start, logging count."""
@@ -224,6 +242,7 @@ def fix_chronology(root):
             continue
     logger.info("Removed %d inverted-time programmes", fixes)
 
+
 def escape_ampersands(root):
     """Ensure no raw '&' remain in text nodes."""
     fixes = 0
@@ -235,18 +254,36 @@ def escape_ampersands(root):
                 fixes += 1
     logger.info("Escaped %d ampersands in text nodes", fixes)
 
+
 def prune_invalid_programmes(root, valid_ids):
-    """Remove invalid-channel programmes, logging each and summary count."""
+    """
+    Remove programmes whose channel ID (normalized) does not match any known channel.
+    Performs lenient matching by unescaping '&amp;' and rewriting programme channel
+    attributes to the canonical form when possible.
+    """
     fixes = 0
+
+    # Build normalized → canonical channel ID map
+    normalized_map = { normalize_id(cid): cid for cid in valid_ids }
+
     for prog in list(root.findall('programme')):
-        cid = prog.get('channel')
-        if cid not in valid_ids:
+        raw_c = prog.get('channel')
+        norm_c = normalize_id(raw_c)
+
+        if norm_c in normalized_map:
+            # Rewrite to the canonical channel ID if different
+            canonical = normalized_map[norm_c]
+            if raw_c != canonical:
+                prog.set('channel', canonical)
+        else:
             title = prog.findtext('title', default='(no title)')
             start = prog.get('start', '')
-            logger.info("Pruning programme %s / %s / %s", start, cid, title)
+            logger.info("Pruning programme %s / %s / %s", start, raw_c, title)
             root.remove(prog)
             fixes += 1
+
     logger.info("Pruned %d invalid programmes", fixes)
+
 
 def final_escape(root):
     """Serialize & parse to normalize escaping; returns new Element root."""
@@ -258,18 +295,22 @@ def final_escape(root):
     )
     return etree.fromstring(xml_bytes)
 
+
 def build_merged_tree():
     """Construct <tv> root, append channels and programmes, set metadata."""
     tv = etree.Element('tv')
     tv.set('generator-info-name', 'mikhoul/XMLTV-EPG-Tools')
     tv.set('generator-info-url', 'https://github.com/mikhoul/XMLTV-EPG-Tools')
     tv.set('generated-ts', str(int(datetime.now().timestamp())))
+
     for ch in output_channels:
         tv.append(ch)
     for plist in output_programs.values():
         for prog in plist:
             tv.append(prog)
+
     return tv
+
 
 def write_output(tv):
     """Write the final EPG to disk, logging output path."""
@@ -283,6 +324,7 @@ def write_output(tv):
             pretty_print=True
         )
     logger.info("Wrote merged EPG to %s", out_file)
+
 
 def xmlmerge():
     """Main merge routine."""
@@ -299,6 +341,7 @@ def xmlmerge():
     escape_ampersands(merged)
     merged = final_escape(merged)
     write_output(merged)
+
 
 if __name__ == '__main__':
     xmlmerge()
