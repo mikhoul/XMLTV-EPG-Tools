@@ -5,7 +5,7 @@ xmlmerge.py
 Merge multiple XMLTV EPG sources into a single, well‐formed, normalized XMLTV file.
 
 Enhancement: Structured logging replaces print() calls to emit fetch/parse durations,
-element counts, fix counts, and now also logs duplicate channels skipped per source,
+element counts, fix counts, and logs duplicate channels skipped per source,
 without altering existing merge logic.
 """
 
@@ -22,17 +22,17 @@ from urllib.parse import urlparse
 
 # --- Configuration ---
 updatetime     = 4               # hours before cache refresh
-trim           = False            # drop programmes older than now
-gzipped_out    = True             # gzip final output
-output_path    = 'output/'        # output directory
-cache_path     = 'cache/'         # cache directory
-input_file     = 'xmlmerge.yaml'  # YAML source list
-base_filename  = 'merged.xml'     # output filename base
+trim           = False           # drop programmes older than now
+gzipped_out    = True            # gzip final output
+output_path    = 'output/'       # output directory
+cache_path     = 'cache/'        # cache directory
+input_file     = 'xmlmerge.yaml' # YAML source list
+base_filename  = 'merged.xml'    # output filename base
 
 # Global data holders
-output_channels  = []             # list of <channel> elements
-output_programs  = {}             # dict: channel_id → list of <programme> elements
-seen_channel_ids = set()          # for channel deduplication
+output_channels  = []            # list of <channel> elements
+output_programs  = {}            # dict: channel_id → list of <programme> elements
+seen_channel_ids = set()         # for channel deduplication
 
 # Regex patterns
 tz_pattern    = re.compile(r'([+-])(\d{1,2}):(\d{2})$')
@@ -100,14 +100,15 @@ def open_xml(source):
             logger.info("Opened cached %s", source)
         else:
             fh = fetch_to_cache(source)
-        logger.info("Load time for %s: %.2fs", source,
-                    (datetime.now() - fetch_start).total_seconds())
+        logger.info("Load time for %s: %.2fs",
+                    source, (datetime.now() - fetch_start).total_seconds())
     else:
         if source.endswith('.gz'):
             fh = gzip.open(source, 'rt', encoding='utf-8', newline=None)
         else:
             fh = open(source, 'rt', encoding='utf-8')
         logger.info("Opened local %s", source)
+
     if fh is None:
         return None
     try:
@@ -127,7 +128,7 @@ def get_channels_programs(source):
     if root is None:
         return
 
-    ch_new, ch_dupes, pr_count = 0, 0, 0
+    ch_new = ch_dupes = pr_count = 0
     for elem in root:
         if elem.tag == 'channel':
             cid = elem.get('id')
