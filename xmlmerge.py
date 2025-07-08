@@ -5,7 +5,8 @@ xmlmerge.py
 Merge multiple XMLTV EPG sources into a single, well‐formed, normalized XMLTV file.
 
 Enhancement: Structured logging replaces print() calls to emit fetch/parse durations,
-element counts, and fix counts without altering existing merge logic.
+element counts, fix counts, and now also logs duplicate channels skipped per source,
+without altering existing merge logic.
 """
 
 import gzip
@@ -15,12 +16,12 @@ import requests
 import sys
 import yaml
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from lxml import etree
 from urllib.parse import urlparse
 
 # --- Configuration ---
-updatetime     = 20               # hours before cache refresh
+updatetime     = 4               # hours before cache refresh
 trim           = False            # drop programmes older than now
 gzipped_out    = True             # gzip final output
 output_path    = 'output/'        # output directory
@@ -29,8 +30,8 @@ input_file     = 'xmlmerge.yaml'  # YAML source list
 base_filename  = 'merged.xml'     # output filename base
 
 # Global data holders
-output_channels = []              # list of <channel> elements
-output_programs = {}              # dict: channel_id → list of <programme> elements
+output_channels  = []             # list of <channel> elements
+output_programs  = {}             # dict: channel_id → list of <programme> elements
 seen_channel_ids = set()          # for channel deduplication
 
 # Regex patterns
@@ -99,7 +100,8 @@ def open_xml(source):
             logger.info("Opened cached %s", source)
         else:
             fh = fetch_to_cache(source)
-        logger.info("Load time for %s: %.2fs", source, (datetime.now() - fetch_start).total_seconds())
+        logger.info("Load time for %s: %.2fs", source,
+                    (datetime.now() - fetch_start).total_seconds())
     else:
         if source.endswith('.gz'):
             fh = gzip.open(source, 'rt', encoding='utf-8', newline=None)
@@ -118,21 +120,24 @@ def open_xml(source):
 def get_channels_programs(source):
     """
     Extract <channel> and <programme> elements from one source.
-    Logs counts and parse duration.
+    Logs counts, duplicates skipped, and parse duration.
     """
     parse_start = datetime.now()
     root = open_xml(source)
     if root is None:
         return
-    ch_count = 0
-    pr_count = 0
+
+    ch_new, ch_dupes, pr_count = 0, 0, 0
     for elem in root:
         if elem.tag == 'channel':
             cid = elem.get('id')
-            if cid and cid not in seen_channel_ids:
-                seen_channel_ids.add(cid)
-                output_channels.append(elem)
-                ch_count += 1
+            if cid:
+                if cid not in seen_channel_ids:
+                    seen_channel_ids.add(cid)
+                    output_channels.append(elem)
+                    ch_new += 1
+                else:
+                    ch_dupes += 1
         elif elem.tag == 'programme':
             ch = elem.get('channel')
             if trim:
@@ -145,9 +150,12 @@ def get_channels_programs(source):
                     pass
             output_programs.setdefault(ch, []).append(elem)
             pr_count += 1
+
     duration = (datetime.now() - parse_start).total_seconds()
-    logger.info("Parsed %s: %d new channels, %d programmes in %.2fs",
-                source, ch_count, pr_count, duration)
+    logger.info(
+        "Parsed %s: %d new channels, %d duplicate channels skipped, %d programmes in %.2fs",
+        source, ch_new, ch_dupes, pr_count, duration
+    )
 
 def normalize_timezones(root):
     """Convert time-zone offsets and log count."""
@@ -225,14 +233,13 @@ def prune_invalid_programmes(root, valid_ids):
     logger.info("Pruned %d invalid programmes", fixes)
 
 def final_escape(root):
-    """
-    Serialize & parse to normalize escaping.
-    No logging needed here.
-    """
-    xml_bytes = etree.tostring(root,
-                               encoding='utf-8',
-                               xml_declaration=True,
-                               pretty_print=True)
+    """Serialize & parse to normalize escaping; returns new Element root."""
+    xml_bytes = etree.tostring(
+        root,
+        encoding='utf-8',
+        xml_declaration=True,
+        pretty_print=True
+    )
     return etree.fromstring(xml_bytes)
 
 def build_merged_tree():
