@@ -3,205 +3,200 @@
 xmlmerge.py
 
 Merge multiple XMLTV EPG sources into a single, well-formed, normalized XMLTV file.
-Implements fixes for:
+Fixes:
  1. Correct channel de-duplication
- 2. Escaping special characters (ampersands, etc.)
- 3. Normalizing timezone offsets to ±HHMM
- 4. Pruning programmes whose channel IDs are invalid
- 5. Integrating validation hooks (placeholders for CI integration)
+ 2. Escape special characters
+ 3. Normalize timezone offsets
+ 4. Prune invalid programmes
+ 5. Consistent dict-based programme store
 """
 
-from lxml import etree
 import gzip
-import requests
-from datetime import datetime
 import os
 import re
-from urllib.parse import urlparse
+import requests
 import sys
 import yaml
+from datetime import datetime
+from lxml import etree
+from urllib.parse import urlparse
 
-# --- Configuration ---
-updatetime = 20           # hours before cached files are refreshed
-trim = False              # if True, drop programmes older than now
-gzipped = True            # gzip output if True
-output_path = 'output/'   # directory for output files
-cache_path = 'cache/'     # directory for cached inputs
-input_file = 'xmlmerge.yaml'
-base_output = 'merged.xml'  # base name; '.gz' appended if gzipped
+# Configuration
+updatetime     = 20               # hours before refreshing cache
+trim           = False            # drop programmes older than now
+gzipped_out    = True             # gzip final output
+output_path    = 'output/'        # where to write merged file
+cache_path     = 'cache/'         # where to cache inputs
+input_file     = 'xmlmerge.yaml'  # YAML listing remote sources
+base_filename  = 'merged.xml'     # merged file name ('.gz' appended)
 
-# Data holders
-output_channels = []      # list of lxml channel elements
-output_programs = {}      # dict: channel_id -> list of lxml programme elements
+# Global holders
+output_channels = []     # list of <channel> elements
+output_programs = {}     # dict: channel_id -> list of <programme> elements
 
-def read_yaml_input(file_name):
+seen_channel_ids = set() # for deduplication
+
+# Regex for timezone normalization: +H:MM or +HH:MM → +HHMM
+tz_pattern = re.compile(r'([+-])(\d{1,2}):(\d{2})$')
+
+
+def read_yaml_input(path):
     try:
-        with open(file_name, 'rt') as f:
+        with open(path, 'rt') as f:
             return yaml.safe_load(f)
     except Exception as e:
-        print(f"Error opening {file_name}: {e}")
+        print(f"Error reading {path}: {e}")
         sys.exit(1)
+
 
 def url_to_filename(url):
     parsed = urlparse(url)
     fname = f"{parsed.netloc}{parsed.path}"
-    # sanitize filesystem-unfriendly characters
+    # sanitize
     return re.sub(r'[<>:"/\\|?*]', '_', fname) or 'default.xml'
 
-def get_file(path):
-    try:
-        if path.endswith('.gz'):
-            return gzip.open(path, 'rt', encoding='utf-8-sig', newline=None)
-        return open(path, 'rt', encoding='utf-8-sig', newline=None)
-    except Exception as e:
-        print(f"Error opening {path}: {e}")
-        sys.exit(1)
 
-def get_url(url, cache_dir):
+def is_fresh(fname):
+    """Check if cached file (<fname> or <fname>.gz) is younger than updatetime."""
+    now = datetime.now().timestamp()
+    for suffix in ('', '.gz'):
+        full = cache_path + fname + suffix
+        if os.path.exists(full) and os.path.getmtime(full) + updatetime*3600 > now:
+            return full
+    return None
+
+
+def fetch_to_cache(url):
+    """Download URL and write to cache (gzipped). Return file handle for reading."""
     try:
         resp = requests.get(url, timeout=60)
         resp.raise_for_status()
-        fname = cache_dir + url_to_filename(url)
-        # if original ends in .gz, write raw; else compress
-        out_path = fname if url.lower().endswith('.gz') else fname + '.gz'
-        with gzip.open(out_path, 'wb') as f:
+        fname = cache_path + url_to_filename(url)
+        out = fname + ('' if url.lower().endswith('.gz') else '.gz')
+        os.makedirs(cache_path, exist_ok=True)
+        with open(out, 'wb') as f:
             f.write(resp.content)
-        return gzip.open(out_path, 'rt', encoding='utf-8')
+        return gzip.open(out, 'rt', encoding='utf-8', newline=None)
     except Exception as e:
         print(f"Error fetching {url}: {e}")
         return None
 
-def is_fresh(path):
-    now = datetime.now().timestamp()
-    for candidate in (path, path + '.gz'):
-        full = cache_path + candidate
-        if os.path.exists(full) and (os.path.getmtime(full) + updatetime*3600) > now:
-            return True
-    return False
 
-def open_xml(source, cache_dir):
-    """Open and parse XML from URL or local file, returning the root element."""
+def open_xml(source):
+    """Return the parsed root of an XMLTV source (URL or local file)."""
     if source.startswith(('http://', 'https://')):
         fname = url_to_filename(source)
-        if is_fresh(fname):
-            print(f"{source}: using cached copy")
-            fp = get_file(cache_dir + fname + '.gz')
+        cached = is_fresh(fname)
+        if cached:
+            fh = gzip.open(cached, 'rt', encoding='utf-8', newline=None)
         else:
-            print(f"{source}: downloading fresh copy")
-            fp = get_url(source, cache_dir)
+            fh = fetch_to_cache(source)
+        print(f"{source} → {'cache' if cached else 'download'}")
     else:
-        print(f"{source}: opening local file")
-        fp = get_file(source)
-    try:
-        parser = etree.XMLParser(recover=True, huge_tree=True, remove_blank_text=True)
-        return etree.parse(fp, parser).getroot()
-    except Exception as e:
-        print(f"XML parse error for {source}: {e}")
+        fh = gzip.open(source, 'rt', encoding='utf-8', newline=None) \
+             if source.endswith('.gz') else open(source, 'rt', encoding='utf-8')
+        print(f"Opening local {source}")
+    if fh is None:
         return None
 
-# -- Fix 1: Correct channel de-duplication --
-seen_channel_ids = set()
+    try:
+        parser = etree.XMLParser(recover=True, huge_tree=True, remove_blank_text=True)
+        return etree.parse(fh, parser).getroot()
+    except Exception as e:
+        print(f"XML parse error in {source}: {e}")
+        return None
 
-def get_channels_programs(source, cache_dir):
-    """Extract channels and programmes from one source tree."""
-    root = open_xml(source, cache_dir)
+
+def get_channels_programs(source):
+    """Extract channels & programmes from one source tree into globals."""
+    root = open_xml(source)
     if root is None:
         return
-    for element in root:
-        if element.tag == 'channel':
-            cid = element.get('id')
-            # only add if unseen
-            if cid not in seen_channel_ids:
-                seen_channel_ids.add(cid)
-                output_channels.append(element)
-        elif element.tag == 'programme':
-            pid = element.get('channel')
-            # optionally trim old programmes
-            if trim:
-                stop = element.get('stop')
-                if old_program(stop):
-                    continue
-            # collect programmes by channel
-            output_programs.setdefault(pid, []).append(element)
 
-# -- Fix 3: Normalize timezone offsets to ±HHMM --
-tz_pattern = re.compile(r'([+-])(\d{1,2}):(\d{2})$')
-def normalize_timezones(tree_root):
-    for prog in tree_root.findall('programme'):
+    for elem in root:
+        if elem.tag == 'channel':
+            cid = elem.get('id')
+            if cid and cid not in seen_channel_ids:
+                seen_channel_ids.add(cid)
+                output_channels.append(elem)
+        elif elem.tag == 'programme':
+            ch = elem.get('channel')
+            if trim:
+                # skip old programmes
+                stop = elem.get('stop')
+                try:
+                    dt = datetime.strptime(stop, '%Y%m%d%H%M%S %z')
+                    if dt < datetime.now(dt.tzinfo):
+                        continue
+                except:
+                    pass
+            output_programs.setdefault(ch, []).append(elem)
+
+
+def normalize_timezones(root):
+    for prog in root.findall('programme'):
         for attr in ('start', 'stop'):
             ts = prog.get(attr)
             if ts:
                 fixed = tz_pattern.sub(lambda m: f"{m.group(1)}{int(m.group(2)):02d}{m.group(3)}", ts)
                 prog.set(attr, fixed)
 
-# -- Fix 2: Escape special characters and strip CDATA --
-def escape_specials(tree_root):
-    for elem in tree_root.iter():
-        # strip CDATA by casting to string
-        if isinstance(elem.text, etree.CDATA):
-            elem.text = str(elem.text)
-        # escape ampersands etc. in attributes
-        for attr, val in list(elem.attrib.items()):
-            if '&' in val:
-                elem.attrib[attr] = val.replace('&', '&amp;')
 
-# -- Fix 4: Prune programmes with invalid channel references --
-def prune_bad_programmes(tree_root, valid_ids):
-    for prog in list(tree_root.findall('programme')):
+def escape_specials(root):
+    for el in root.iter():
+        # strip CDATA
+        if isinstance(el.text, etree.CDATA):
+            el.text = str(el.text)
+        # escape &
+        for a,v in list(el.attrib.items()):
+            if '&' in v:
+                el.attrib[a] = v.replace('&', '&amp;')
+
+
+def prune_invalid_programmes(root, valid_ids):
+    for prog in list(root.findall('programme')):
         if prog.get('channel') not in valid_ids:
-            tree_root.remove(prog)
+            root.remove(prog)
 
-def create_merged_tree(channels, programs):
-    root = etree.Element('tv')
-    for ch in channels:
-        root.append(ch)
-    for plist in programs.values():
-        for prog in plist:
-            root.append(prog)
-    return root
 
-def old_program(timestr):
-    try:
-        dt = datetime.strptime(timestr, '%Y%m%d%H%M%S %z')
-        return dt < datetime.now(dt.tzinfo)
-    except:
-        return False
+def build_merged_tree():
+    tv = etree.Element('tv')
+    tv.set('generator-info-name', 'mikhoul/XMLTV-EPG-Tools')
+    tv.set('generated-ts', str(round(datetime.now().timestamp())))
+    # append channels
+    for ch in output_channels:
+        tv.append(ch)
+    # append programmes
+    for plist in output_programs.values():
+        for p in plist:
+            tv.append(p)
+    return tv
 
-def write_xml(root, output_dir, base_name, gzipped_out=True):
-    # add generator metadata
-    now_ts = round(datetime.now().timestamp())
-    root.set('generator-info-name', 'mikhoul/XMLTV-EPG-Tools')
-    root.set('generated-ts', str(now_ts))
 
-    tree = etree.ElementTree(root)
-    out_name = base_name + ('.gz' if gzipped_out else '')
-    full_path = output_dir + out_name
-    os.makedirs(output_dir, exist_ok=True)
-    with (gzip.open(full_path, 'wb') if gzipped_out else open(full_path, 'wb')) as f:
-        tree.write(f, pretty_print=True, xml_declaration=True, encoding='utf-8')
-    print(f"Wrote: {full_path}")
+def write_output(tv):
+    os.makedirs(output_path, exist_ok=True)
+    out_file = output_path + base_filename + ('.gz' if gzipped_out else '')
+    with (gzip.open(out_file, 'wb') if gzipped_out else open(out_file, 'wb')) as f:
+        etree.ElementTree(tv).write(
+            f,
+            xml_declaration=True,
+            encoding='utf-8',
+            pretty_print=True
+        )
+    print(f"Wrote merged EPG: {out_file}")
+
 
 def xmlmerge():
-    # load source list
     cfg = read_yaml_input(input_file)
-    files = cfg.get('files', [])
-    # process each source
-    for src in files:
-        get_channels_programs(src, cache_path)
+    for src in cfg.get('files', []):
+        get_channels_programs(src)
 
-    # build preliminary tree
-    merged = create_merged_tree(output_channels, output_programs)
+    merged = build_merged_tree()
+    normalize_timezones(merged)
+    escape_specials(merged)
+    prune_invalid_programmes(merged, seen_channel_ids)
+    write_output(merged)
 
-    # apply fixes
-    normalize_timezones(merged)                          # Fix 3
-    escape_specials(merged)                              # Fix 2
-    prune_bad_programmes(merged, seen_channel_ids)       # Fix 4
-
-    # placeholder: run external validator (e.g., xmllint) here for CI integration Fix 5
-    # e.g., subprocess.run(["xmllint", "--noout", "--dtdvalid", "xmltv.dtd", temp_file])
-
-    # write final output
-    write_xml(merged, output_path, base_output, gzipped)
 
 if __name__ == '__main__':
     xmlmerge()
