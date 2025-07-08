@@ -35,8 +35,21 @@ jobs:
           mkdir -p cache output
           python xmlmerge.py
 
-      - name: Upload merged EPG
+      - name: Upload artifact (merged EPG)
         uses: actions/upload-artifact@v4
         with:
           name: merged-xmltv-epg
           path: output/merged.xml.gz
+
+      - name: Configure Git for commit
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and push merged EPG
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git add output/merged.xml.gz
+          git commit -m "Update merged EPG [skip ci]" || echo "No changes to commit"
+          git push
