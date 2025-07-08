@@ -5,8 +5,8 @@ xmlmerge.py
 Merge multiple XMLTV EPG sources into a single, well‐formed, normalized XMLTV file.
 
 Enhancement: Structured logging replaces print() calls to emit fetch/parse durations,
-element counts, fix counts, and logs duplicate channels skipped per source,
-without altering existing merge logic.
+element counts, fix counts, logs duplicate channels skipped per source, and
+records each pruned programme for missing channels—all without altering existing merge logic.
 """
 
 import gzip
@@ -225,10 +225,15 @@ def escape_ampersands(root):
     logger.info("Escaped %d ampersands in text nodes", fixes)
 
 def prune_invalid_programmes(root, valid_ids):
-    """Remove invalid-channel programmes, logging count."""
+    """Remove invalid-channel programmes, logging each and summary count."""
     fixes = 0
     for prog in list(root.findall('programme')):
-        if prog.get('channel') not in valid_ids:
+        cid = prog.get('channel')
+        if cid not in valid_ids:
+            # Log exactly which programme is being dropped
+            title = prog.findtext('title', default='(no title)')
+            start = prog.get('start', '')
+            logger.info("Pruning programme %s / %s / %s", start, cid, title)
             root.remove(prog)
             fixes += 1
     logger.info("Pruned %d invalid programmes", fixes)
