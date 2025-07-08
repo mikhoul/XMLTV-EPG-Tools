@@ -9,7 +9,7 @@ Includes fixes for:
  2. Escape special characters (ampersands, CDATA → text)
  3. Normalize timezone offsets to ±HHMM
  4. Prune programmes with invalid channel references
- 5. Sanitize scientific‐notation timestamps
+ 5. Convert scientific‐notation timestamps into fixed-width strings
  6. Fix chronological inversions (stop ≤ start)
  7. Final escape pass to ensure no raw '&' remain
 """
@@ -39,10 +39,9 @@ output_programs = {}              # dict: channel_id → list of <programme> ele
 seen_channel_ids = set()          # for channel deduplication
 
 # Regex patterns
-tz_pattern   = re.compile(r'([+-])(\d{1,2}):(\d{2})$')
-sci_pattern  = re.compile(r'\d+\.\d+e[+-]\d+', re.IGNORECASE)
-amp_pattern  = re.compile(r'&(?!amp;|lt;|gt;|quot;|apos;)')
-
+tz_pattern    = re.compile(r'([+-])(\d{1,2}):(\d{2})$')
+sci_full      = re.compile(r'(\d+\.\d+e[+-]\d+)(?:\s*([+-]\d{4}))?$', re.IGNORECASE)
+amp_pattern   = re.compile(r'&(?!amp;|lt;|gt;|quot;|apos;)')
 
 def read_yaml_input(path):
     """Load YAML file listing XMLTV source URLs or paths."""
@@ -53,13 +52,11 @@ def read_yaml_input(path):
         print(f"Error reading {path}: {e}")
         sys.exit(1)
 
-
 def url_to_filename(url):
     """Convert a URL to a safe cache filename."""
     parsed = urlparse(url)
     fname = f"{parsed.netloc}{parsed.path}"
     return re.sub(r'[<>:"/\\|?*]', '_', fname) or 'default.xml'
-
 
 def is_fresh(fname):
     """Return cached path if fresh (younger than updatetime), else None."""
@@ -69,7 +66,6 @@ def is_fresh(fname):
         if os.path.exists(full) and os.path.getmtime(full) + updatetime*3600 > now:
             return full
     return None
-
 
 def fetch_to_cache(url):
     """Download URL and write to cache, return file‐handle for reading."""
@@ -85,7 +81,6 @@ def fetch_to_cache(url):
     except Exception as e:
         print(f"Error fetching {url}: {e}")
         return None
-
 
 def open_xml(source):
     """Parse and return root of XMLTV source (URL or local)."""
@@ -111,7 +106,6 @@ def open_xml(source):
     except Exception as e:
         print(f"XML parse error in {source}: {e}")
         return None
-
 
 def get_channels_programs(source):
     """
@@ -139,7 +133,6 @@ def get_channels_programs(source):
                     pass
             output_programs.setdefault(ch, []).append(elem)
 
-
 def normalize_timezones(root):
     """Convert offsets ±H:MM or ±HH:MM to ±HHMM."""
     for prog in root.findall('programme'):
@@ -149,26 +142,29 @@ def normalize_timezones(root):
                 fixed = tz_pattern.sub(lambda m: f"{m.group(1)}{int(m.group(2)):02d}{m.group(3)}", ts)
                 prog.set(attr, fixed)
 
+def normalize_exponents(root):
+    """
+    Convert scientific-notation timestamps into fixed-width 14-digit strings.
+    Leaves all other attributes unchanged.
+    """
+    for prog in root.findall('programme'):
+        for attr in ('start', 'stop'):
+            val = prog.get(attr, '')
+            m = sci_full.match(val)
+            if m:
+                float_ts, offset = m.groups()
+                ts_int = int(float(float_ts))
+                ts_str = f"{ts_int:014d}"
+                prog.set(attr, ts_str + (offset or ''))
 
 def escape_specials(root):
-    """Strip CDATA and escape & in attributes."""
+    """Strip CDATA and escape ampersands in attributes."""
     for el in root.iter():
         if isinstance(el.text, etree.CDATA):
             el.text = str(el.text)
         for a, v in list(el.attrib.items()):
             if '&' in v:
                 el.attrib[a] = v.replace('&', '&amp;')
-
-
-def sanitize_timestamps(root):
-    """Remove <programme> with scientific‐notation timestamps."""
-    for prog in list(root.findall('programme')):
-        for attr in ('start', 'stop'):
-            ts = prog.get(attr, '')
-            if sci_pattern.search(ts):
-                root.remove(prog)
-                break
-
 
 def fix_chronology(root):
     """
@@ -183,13 +179,11 @@ def fix_chronology(root):
         except:
             continue
 
-
 def escape_ampersands(root):
     """Ensure no raw '&' remain in text nodes."""
     for el in root.iter():
         if el.text:
             el.text = amp_pattern.sub('&amp;', el.text)
-
 
 def prune_invalid_programmes(root, valid_ids):
     """Remove programmes whose @channel not in valid channel IDs."""
@@ -197,24 +191,23 @@ def prune_invalid_programmes(root, valid_ids):
         if prog.get('channel') not in valid_ids:
             root.remove(prog)
 
-
 def final_escape(root):
     """
-    Serialize and parse to let lxml escape any remaining specials.
+    Serialize and parse to let lxml escape any remaining special characters.
     Returns a new Element root.
     """
-    xml_bytes = etree.tostring(root,
-                               encoding='utf-8',
-                               xml_declaration=True,
-                               pretty_print=True)
+    xml_bytes = etree.tostring(
+        root,
+        encoding='utf-8',
+        xml_declaration=True,
+        pretty_print=True
+    )
     return etree.fromstring(xml_bytes)
-
 
 def build_merged_tree():
     """Construct <tv> root, append channels and programmes, set metadata."""
     tv = etree.Element('tv')
     tv.set('generator-info-name', 'mikhoul/XMLTV-EPG-Tools')
-    # Use integer timestamp to avoid scientific notation
     tv.set('generated-ts', str(int(datetime.now().timestamp())))
     for ch in output_channels:
         tv.append(ch)
@@ -222,7 +215,6 @@ def build_merged_tree():
         for prog in plist:
             tv.append(prog)
     return tv
-
 
 def write_output(tv):
     """Write final <tv> to disk, gzipped if configured."""
@@ -237,7 +229,6 @@ def write_output(tv):
         )
     print(f"Wrote merged EPG: {out_file}")
 
-
 def xmlmerge():
     cfg = read_yaml_input(input_file)
     for src in cfg.get('files', []):
@@ -245,15 +236,13 @@ def xmlmerge():
 
     merged = build_merged_tree()
     normalize_timezones(merged)
+    normalize_exponents(merged)       # Convert scientific notation
     escape_specials(merged)
-    sanitize_timestamps(merged)
     fix_chronology(merged)
     prune_invalid_programmes(merged, seen_channel_ids)
     escape_ampersands(merged)
-    # Final escape to enforce all escaping
     merged = final_escape(merged)
     write_output(merged)
-
 
 if __name__ == '__main__':
     xmlmerge()
