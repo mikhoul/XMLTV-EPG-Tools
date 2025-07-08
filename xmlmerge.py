@@ -4,13 +4,9 @@ xmlmerge.py
 
 Merge multiple XMLTV EPG sources into a single, well-formed, normalized XMLTV file.
 
-Enhancement: Structured logging emits:
-  - Fetch durations
-  - Parse durations
-  - Counts of new vs duplicate channels
-  - Counts of programmes processed
-  - Counts of timezone fixes, exponent conversions, CDATA/attribute escapes,
-    chronology removals, ampersand escapes
+Enhancements:
+  - Structured logging for fetch/parse durations, element counts, and fix counts
+  - Logs duplicate channels skipped per source, explicitly stating when none were found
   - Logs each pruned programme for missing channels
 """
 
@@ -52,7 +48,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 def read_yaml_input(path):
     """Load YAML file listing XMLTV source URLs or paths."""
     try:
@@ -62,13 +57,11 @@ def read_yaml_input(path):
         logger.error("Error reading %s: %s", path, e)
         sys.exit(1)
 
-
 def url_to_filename(url):
     """Convert a URL to a safe cache filename."""
     parsed = urlparse(url)
     fname = f"{parsed.netloc}{parsed.path}"
     return re.sub(r'[<>:"/\\|?*]', '_', fname) or 'default.xml'
-
 
 def is_fresh(fname):
     """Return cached path if fresh (younger than updatetime), else None."""
@@ -78,7 +71,6 @@ def is_fresh(fname):
         if os.path.exists(full) and os.path.getmtime(full) + updatetime*3600 > now:
             return full
     return None
-
 
 def fetch_to_cache(url):
     """Download URL content and cache it, logging duration."""
@@ -97,7 +89,6 @@ def fetch_to_cache(url):
     except Exception as e:
         logger.error("Error fetching %s: %s", url, e)
         return None
-
 
 def open_xml(source):
     """Open and parse XMLTV source from URL or local file, logging load time."""
@@ -129,11 +120,11 @@ def open_xml(source):
         logger.error("XML parse error in %s: %s", source, e)
         return None
 
-
 def get_channels_programs(source):
     """
     Extract <channel> and <programme> elements from one source.
-    Logs counts, duplicates skipped, and parse duration.
+    Logs counts, duplicates skipped (explicitly noting zero duplicates),
+    and parse duration.
     """
     parse_start = datetime.now()
     root = open_xml(source)
@@ -167,11 +158,16 @@ def get_channels_programs(source):
             pr_count += 1
 
     duration = (datetime.now() - parse_start).total_seconds()
-    logger.info(
-        "Parsed %s: %d new channels, %d duplicate channels skipped, %d programmes in %.2fs",
-        source, ch_new, ch_dupes, pr_count, duration
-    )
-
+    if ch_dupes:
+        logger.info(
+            "Parsed %s: %d new channels, %d duplicate channels skipped, %d programmes in %.2fs",
+            source, ch_new, ch_dupes, pr_count, duration
+        )
+    else:
+        logger.info(
+            "Parsed %s: %d new channels, 0 duplicates found, %d programmes in %.2fs",
+            source, ch_new, pr_count, duration
+        )
 
 def normalize_timezones(root):
     """Convert time-zone offsets and log count."""
@@ -185,7 +181,6 @@ def normalize_timezones(root):
                     prog.set(attr, fixed)
                     fixes += 1
     logger.info("Applied %d timezone normalizations", fixes)
-
 
 def normalize_exponents(root):
     """Convert scientific-notation timestamps to fixed-width strings."""
@@ -202,7 +197,6 @@ def normalize_exponents(root):
                 fixes += 1
     logger.info("Converted %d scientific-notation timestamps", fixes)
 
-
 def escape_specials(root):
     """Strip CDATA and escape ampersands in attributes."""
     fixes = 0
@@ -215,7 +209,6 @@ def escape_specials(root):
                 el.attrib[a] = v.replace('&', '&amp;')
                 fixes += 1
     logger.info("Applied %d CDATA/attribute escapes", fixes)
-
 
 def fix_chronology(root):
     """Remove programmes where stop ≤ start, logging count."""
@@ -231,7 +224,6 @@ def fix_chronology(root):
             continue
     logger.info("Removed %d inverted-time programmes", fixes)
 
-
 def escape_ampersands(root):
     """Ensure no raw '&' remain in text nodes."""
     fixes = 0
@@ -242,7 +234,6 @@ def escape_ampersands(root):
                 el.text = new
                 fixes += 1
     logger.info("Escaped %d ampersands in text nodes", fixes)
-
 
 def prune_invalid_programmes(root, valid_ids):
     """Remove invalid-channel programmes, logging each and summary count."""
@@ -257,7 +248,6 @@ def prune_invalid_programmes(root, valid_ids):
             fixes += 1
     logger.info("Pruned %d invalid programmes", fixes)
 
-
 def final_escape(root):
     """Serialize & parse to normalize escaping; returns new Element root."""
     xml_bytes = etree.tostring(
@@ -267,7 +257,6 @@ def final_escape(root):
         pretty_print=True
     )
     return etree.fromstring(xml_bytes)
-
 
 def build_merged_tree():
     """Construct <tv> root, append channels and programmes, set metadata."""
@@ -282,7 +271,6 @@ def build_merged_tree():
             tv.append(prog)
     return tv
 
-
 def write_output(tv):
     """Write the final EPG to disk, logging output path."""
     os.makedirs(output_path, exist_ok=True)
@@ -295,7 +283,6 @@ def write_output(tv):
             pretty_print=True
         )
     logger.info("Wrote merged EPG to %s", out_file)
-
 
 def xmlmerge():
     """Main merge routine."""
@@ -312,7 +299,6 @@ def xmlmerge():
     escape_ampersands(merged)
     merged = final_escape(merged)
     write_output(merged)
-
 
 if __name__ == '__main__':
     xmlmerge()
