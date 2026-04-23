@@ -1,55 +1,52 @@
-name: Daily XMLTV Merger
-
+name: VeloTV EPG Generator
 on:
   schedule:
-    # 4 PM Eastern Time is 20:00 UTC
-    - cron: '0 20 * * *'
+    - cron: '0 */12 * * *'
   workflow_dispatch:
 
-jobs:
-  merge:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ github.workspace }}
+permissions:
+  contents: write
 
+jobs:
+  merge-epg:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v6 # Fixed: Support for Node 24
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6 # Fixed: Support for Node 24
         with:
-          python-version: '3.11'
+          python-version: '3.10'
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install lxml pyyaml requests
+        run: pip install lxml requests pyyaml
 
-      - name: Run xmlmerge
-        env:
-          CACHE_PATH: cache/
-          OUTPUT_PATH: output/
+      - name: Run XMLTV Merge
         run: |
-          mkdir -p cache output
-          python xmlmerge.py
+          # This Python snippet forces your simple list into the tool's required format
+          python -c "
+          import yaml, subprocess, os
+          with open('xmlmerge.yaml', 'r') as f:
+              data = yaml.safe_load(f)
+          
+          # Convert your list of strings into the dictionary format the tool expects
+          formatted_files = [{'url': u, 'name': f'src_{i}'} for i, u in enumerate(data['files'])]
+          
+          # Write a temporary config the tool can understand
+          with open('temp_config.yaml', 'w') as f:
+              yaml.dump({'files': formatted_files, 'output': 'epg.xml', 'gzip': True}, f)
+          
+          # Execute the tool using the temporary config
+          subprocess.run(['python', 'xmlmerge.py', '-c', 'temp_config.yaml'])
+          "
 
-      - name: Upload artifact (merged EPG)
-        uses: actions/upload-artifact@v4
-        with:
-          name: merged-xmltv-epg
-          path: output/merged.xml.gz
-
-      - name: Configure Git for commit
+      - name: Commit and Push
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Commit and push merged EPG
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git add output/merged.xml.gz
-          git commit -m "Update merged EPG [skip ci]" || echo "No changes to commit"
+          git config --global user.name "VeloTV-Bot"
+          git config --global user.email "bot@velotv.app"
+          # The tool outputs to 'output/merged.xml.gz' by default
+          cp output/merged.xml.gz epg.xml.gz 
+          git add epg.xml.gz
+          git commit -m "Update EPG data (Node 24 Ready)" || echo "No changes"
           git push
