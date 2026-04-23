@@ -1,8 +1,32 @@
-      - name: Run XMLTV Merge
+name: VeloTV EPG Generator
+on:
+  schedule:
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  merge-epg:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4 # Use v4 to avoid Node 20 deprecation spam
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Run Direct Merge
         run: |
           python -c "
-          import requests, gzip, io
-          headers = {'User-Agent': 'Mozilla/5.0 (VeloTV-EPG-Bot/1.0)'}
+          import requests, gzip, io, os
+          
+          # Real-world headers to prevent being blocked by EPG providers
+          headers = {'User-Agent': 'Mozilla/5.0 (VeloTV-Bot/1.0; iOS)'}
+          
           urls = [
               'https://iptv-org.github.io/epg/guides/world.xml.gz',
               'https://epgshare01.online/epgshare01/epg_ripper_ALL.xml.gz',
@@ -12,24 +36,39 @@
           ]
           
           with open('epg.xml', 'wb') as out:
+              # XMLTV standard header
               out.write(b'<?xml version=\"1.0\" encoding=\"UTF-8\"?><tv>')
+              
               for url in urls:
                   print(f'Fetching: {url}')
                   try:
-                      r = requests.get(url, headers=headers, timeout=30)
+                      r = requests.get(url, headers=headers, timeout=60)
                       if r.status_code == 200:
                           content = r.content
                           if url.endswith('.gz'):
                               content = gzip.decompress(content)
-                          # Strip the XML declaration and <tv> tags from sub-files to merge properly
-                          clean_content = content.replace(b'<?xml version=\"1.0\" encoding=\"UTF-8\"?>', b'').replace(b'<tv>', b'').replace(b'</tv>', b'')
-                          out.write(clean_content)
-                          print(f' Success: {len(content)} bytes')
+                          
+                          # Clean the XML so they can be concatenated
+                          # We remove the header and the <tv> tags from each sub-source
+                          clean = content.replace(b'<?xml version=\"1.0\" encoding=\"UTF-8\"?>', b'')
+                          clean = clean.replace(b'<tv>', b'').replace(b'</tv>', b'')
+                          out.write(clean)
+                          print(f'  Success: {len(content)} bytes added.')
                       else:
-                          print(f' Failed: HTTP {r.status_code}')
+                          print(f'  Failed: HTTP {r.status_code}')
                   except Exception as e:
-                      print(f' Error: {e}')
+                      print(f'  Error: {e}')
+              
               out.write(b'</tv>')
           "
+          # Compress with max setting for your mobile app's bandwidth
           gzip -9 -c epg.xml > epg.xml.gz
-          ls -lh epg.xml.gz # This will print the size in the logs
+          ls -lh epg.xml.gz
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name "VeloTV-Bot"
+          git config --global user.email "bot@velotv.app"
+          git add epg.xml.gz
+          git commit -m "Update EPG - Brute Force Method" || echo "No changes"
+          git push
