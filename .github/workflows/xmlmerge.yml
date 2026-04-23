@@ -2,8 +2,12 @@ name: Update VeloTV EPG
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Runs daily at midnight
-  workflow_dispatch: # Allows manual trigger
+    # Runs twice daily for global freshness (2 AM & 2 PM UTC)
+    - cron: '0 2,14 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -13,7 +17,8 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Fetches all history so we can reset it
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -21,32 +26,29 @@ jobs:
           python-version: '3.10'
 
       - name: Install Dependencies
-        run: |
-          pip install requests pyyaml lxml
+        run: pip install requests pyyaml lxml
 
-      - name: Clear Stuck Large Commits
+      - name: Sync with Remote
         run: |
           git config --global user.name "VeloTV-Bot"
           git config --global user.email "bot@velotv.app"
-          # Sync local state with remote and wipe any pending heavy commits
+          # Ensure we have the latest files from the repo before running the script
+          git fetch origin main
           git reset --hard origin/main
 
-      - name: Run EPG Optimizer
+      - name: Run EPG Daily Splitter
         run: python xmlmerge.py
 
-      - name: Verify File Size
+      - name: Clean Up Old Files
         run: |
-          ls -lh epg.xml.gz
-          FILE_SIZE=$(stat -c%s "epg.xml.gz")
-          MAX_SIZE=100000000 # 100MB
-          if [ $FILE_SIZE -gt $MAX_SIZE ]; then
-            echo "Error: epg.xml.gz is still over 100MB ($FILE_SIZE bytes)"
-            exit 1
-          fi
+          # Optional: Remove files older than 3 days to keep the repo clean
+          find . -name "*.xml.gz" -mtime +3 -delete
 
       - name: Commit and Force Push
         run: |
-          git add epg.xml.gz
-          git commit -m "Update EPG Data (Pruned & Optimized)" || echo "No changes"
-          # Use force to overwrite the 184MB error on the remote server
-          git push origin main --force
+          # Add all the new daily files
+          git add *.xml.gz
+          git commit -m "Update Daily EPG Partitioned Files" || echo "No changes"
+          
+          # Force push to ensure the partitioned strategy overwrites any old single-file history
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git main --force
