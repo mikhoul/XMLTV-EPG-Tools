@@ -1,52 +1,35 @@
-name: VeloTV EPG Generator
-on:
-  schedule:
-    - cron: '0 */12 * * *'
-  workflow_dispatch:
-
-permissions:
-  contents: write
-
-jobs:
-  merge-epg:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6 # Fixed: Support for Node 24
-
-      - name: Set up Python
-        uses: actions/setup-python@v6 # Fixed: Support for Node 24
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
-        run: pip install lxml requests pyyaml
-
       - name: Run XMLTV Merge
         run: |
-          # This Python snippet forces your simple list into the tool's required format
           python -c "
-          import yaml, subprocess, os
-          with open('xmlmerge.yaml', 'r') as f:
-              data = yaml.safe_load(f)
+          import requests, gzip, io
+          headers = {'User-Agent': 'Mozilla/5.0 (VeloTV-EPG-Bot/1.0)'}
+          urls = [
+              'https://iptv-org.github.io/epg/guides/world.xml.gz',
+              'https://epgshare01.online/epgshare01/epg_ripper_ALL.xml.gz',
+              'https://beoutq.live/epg/beoutq.xml.gz',
+              'https://iptv-epg.org/epg.xml.gz',
+              'https://epg.best/free.xml.gz'
+          ]
           
-          # Convert your list of strings into the dictionary format the tool expects
-          formatted_files = [{'url': u, 'name': f'src_{i}'} for i, u in enumerate(data['files'])]
-          
-          # Write a temporary config the tool can understand
-          with open('temp_config.yaml', 'w') as f:
-              yaml.dump({'files': formatted_files, 'output': 'epg.xml', 'gzip': True}, f)
-          
-          # Execute the tool using the temporary config
-          subprocess.run(['python', 'xmlmerge.py', '-c', 'temp_config.yaml'])
+          with open('epg.xml', 'wb') as out:
+              out.write(b'<?xml version=\"1.0\" encoding=\"UTF-8\"?><tv>')
+              for url in urls:
+                  print(f'Fetching: {url}')
+                  try:
+                      r = requests.get(url, headers=headers, timeout=30)
+                      if r.status_code == 200:
+                          content = r.content
+                          if url.endswith('.gz'):
+                              content = gzip.decompress(content)
+                          # Strip the XML declaration and <tv> tags from sub-files to merge properly
+                          clean_content = content.replace(b'<?xml version=\"1.0\" encoding=\"UTF-8\"?>', b'').replace(b'<tv>', b'').replace(b'</tv>', b'')
+                          out.write(clean_content)
+                          print(f' Success: {len(content)} bytes')
+                      else:
+                          print(f' Failed: HTTP {r.status_code}')
+                  except Exception as e:
+                      print(f' Error: {e}')
+              out.write(b'</tv>')
           "
-
-      - name: Commit and Push
-        run: |
-          git config --global user.name "VeloTV-Bot"
-          git config --global user.email "bot@velotv.app"
-          # The tool outputs to 'output/merged.xml.gz' by default
-          cp output/merged.xml.gz epg.xml.gz 
-          git add epg.xml.gz
-          git commit -m "Update EPG data (Node 24 Ready)" || echo "No changes"
-          git push
+          gzip -9 -c epg.xml > epg.xml.gz
+          ls -lh epg.xml.gz # This will print the size in the logs
