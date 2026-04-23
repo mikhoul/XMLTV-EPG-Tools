@@ -1,6 +1,6 @@
 files:
-  - https://i.mjh.nz/PlutoTV/fr.xml.gz
-  - https://i.mjh.nz/Plex/fr.xml.gz
-  - https://i.mjh.nz/SamsungTVPlus/fr.xml.gz
-  - https://epgshare01.online/epgshare01/epg_ripper_RAKUTEN_FR1.xml.gz
-  - https://epgshare01.online/epgshare01/epg_ripper_CA1.xml.gz
+  - https://iptv-org.github.io/epg/guides/world.xml.gz
+  - https://epgshare01.online/epgshare01/epg_ripper_ALL.xml.gz
+  - https://beoutq.live/epg/beoutq.xml.gz
+  - https://iptv-epg.org/epg.xml.gz
+  - https://epg.best/free.xml.gz
