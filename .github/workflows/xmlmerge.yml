@@ -1,4 +1,4 @@
-name: VeloTV EPG Generator
+ name: VeloTV EPG Generator
 on:
   schedule:
     - cron: '0 */12 * * *'
@@ -22,18 +22,47 @@ jobs:
       - name: Install dependencies
         run: pip install requests pyyaml
 
-      - name: Run Merge Script
-        run: python merge.py
+      - name: Run Merge
+        run: |
+          python - <<EOF
+          import requests, gzip, yaml, os
+          headers = {'User-Agent': 'Mozilla/5.0 (VeloTV-Bot/1.0)'}
+          
+          try:
+              with open('xmlmerge.yaml', 'r') as f:
+                  config = yaml.safe_load(f)
+              urls = config.get('files', [])
+              print(f"Found {len(urls)} sources.")
+          except Exception as e:
+              print(f"Error loading YAML: {e}")
+              exit(1)
 
-      - name: Compress and Finalize
+          with open('epg.xml', 'wb') as out:
+              out.write(b'<?xml version="1.0" encoding="UTF-8"?><tv>')
+              for url in urls:
+                  print(f"Fetching: {url}")
+                  try:
+                      r = requests.get(url, headers=headers, timeout=60)
+                      if r.status_code == 200:
+                          content = r.content
+                          if url.endswith('.gz'):
+                              content = gzip.decompress(content)
+                          clean = content.replace(b'<?xml version="1.0" encoding="UTF-8"?>', b'')
+                          clean = clean.replace(b'<tv>', b'').replace(b'</tv>', b'')
+                          out.write(clean)
+                          print(f"  Success: {len(content)} bytes added.")
+                      else:
+                          print(f"  Failed: HTTP {r.status_code}")
+                  except Exception as e:
+                      print(f"  Error: {e}")
+              out.write(b'</tv>')
+          EOF
+
+      - name: Compress and Push
         run: |
           gzip -9 -c epg.xml > epg.xml.gz
-          ls -lh epg.xml.gz
-
-      - name: Commit and Push
-        run: |
           git config --global user.name "VeloTV-Bot"
           git config --global user.email "bot@velotv.app"
           git add epg.xml.gz
-          git commit -m "Update EPG - Script Method" || echo "No changes"
+          git commit -m "Update EPG - Self-Contained Workflow" || echo "No changes"
           git push
