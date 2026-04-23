@@ -1,18 +1,19 @@
-name: VeloTV EPG Generator
+name: Update VeloTV EPG
+
 on:
   schedule:
-    - cron: '0 */12 * * *'
-  workflow_dispatch:
-
-permissions:
-  contents: write
+    - cron: '0 0 * * *' # Runs daily at midnight
+  workflow_dispatch: # Allows manual trigger
 
 jobs:
-  merge-epg:
+  build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetches all history so we can reset it
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -20,53 +21,32 @@ jobs:
           python-version: '3.10'
 
       - name: Install Dependencies
-        run: pip install requests pyyaml
-
-      - name: Run EPG Merge
         run: |
-          python - <<EOF
-          import requests, gzip, yaml, os
-          
-          # 1. Load your list
-          try:
-              with open('xmlmerge.yaml', 'r') as f:
-                  config = yaml.safe_load(f)
-              urls = config.get('files', [])
-              print(f"Syncing {len(urls)} sources for VeloTV...")
-          except Exception as e:
-              print(f"YAML Error: {e}")
-              exit(1)
+          pip install requests pyyaml lxml
 
-          # 2. Process and Merge
-          headers = {'User-Agent': 'Mozilla/5.0 (VeloTV-Bot/1.0)'}
-          with open('epg.xml', 'wb') as out:
-              out.write(b'<?xml version="1.0" encoding="UTF-8"?><tv>')
-              for url in urls:
-                  print(f"Fetching: {url}")
-                  try:
-                      r = requests.get(url, headers=headers, timeout=60)
-                      if r.status_code == 200:
-                          content = r.content
-                          if url.endswith('.gz'):
-                              content = gzip.decompress(content)
-                          
-                          # Remove tags to allow clean concatenation
-                          clean = content.replace(b'<?xml version="1.0" encoding="UTF-8"?>', b'')
-                          clean = clean.replace(b'<tv>', b'').replace(b'</tv>', b'')
-                          out.write(clean)
-                          print(f"  Success: {len(content)} bytes")
-                      else:
-                          print(f"  HTTP {r.status_code} for {url}")
-                  except Exception as e:
-                      print(f"  Failed {url}: {e}")
-              out.write(b'</tv>')
-          EOF
-
-      - name: Deploy Result
+      - name: Clear Stuck Large Commits
         run: |
-          gzip -9 -c epg.xml > epg.xml.gz
           git config --global user.name "VeloTV-Bot"
           git config --global user.email "bot@velotv.app"
+          # Sync local state with remote and wipe any pending heavy commits
+          git reset --hard origin/main
+
+      - name: Run EPG Optimizer
+        run: python xmlmerge.py
+
+      - name: Verify File Size
+        run: |
+          ls -lh epg.xml.gz
+          FILE_SIZE=$(stat -c%s "epg.xml.gz")
+          MAX_SIZE=100000000 # 100MB
+          if [ $FILE_SIZE -gt $MAX_SIZE ]; then
+            echo "Error: epg.xml.gz is still over 100MB ($FILE_SIZE bytes)"
+            exit 1
+          fi
+
+      - name: Commit and Force Push
+        run: |
           git add epg.xml.gz
-          git commit -m "Update EPG Data" || echo "No changes"
-          git push
+          git commit -m "Update EPG Data (Pruned & Optimized)" || echo "No changes"
+          # Use force to overwrite the 184MB error on the remote server
+          git push origin main --force
