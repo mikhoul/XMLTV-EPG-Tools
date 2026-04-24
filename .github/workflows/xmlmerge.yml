@@ -36,6 +36,12 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
 
+      - name: Clear rolling daily files
+        run: |
+          for offset in -1 0 1; do
+            rm -f "$(date -u -d "${offset} day" +'%d-%m-%Y').xml.gz"
+          done
+
       - name: Run EPG Daily Splitter
         run: python xmlmerge.py
 
