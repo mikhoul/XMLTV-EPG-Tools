@@ -46,8 +46,8 @@ jobs:
 
       - name: Commit and Force Push
         run: |
-          # Add all the new daily files
-          git add *.xml.gz
+          # Stage refreshed and removed daily files
+          git add -A -- '*.xml.gz'
           git commit -m "Update Daily EPG Partitioned Files" || echo "No changes"
           
           # Force push to ensure the partitioned strategy overwrites any old single-file history
