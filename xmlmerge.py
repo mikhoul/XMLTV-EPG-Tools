@@ -36,12 +36,12 @@ def open_xml(source):
 def generate_daily_epg(date_target, all_channels, all_progs):
     """Generates a single XMLTV file for a specific date."""
     filename = f"{date_target.strftime('%d-%m-%Y')}.xml.gz"
-    
+
     # 1. Skip if file already exists
     if os.path.exists(filename):
         logger.info(f"Skipping {filename}, already exists.")
         return
-
+    
     logger.info(f"Generating {filename}...")
     
     tv = etree.Element('tv')

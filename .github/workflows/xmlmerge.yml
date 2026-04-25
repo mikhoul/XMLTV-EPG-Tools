@@ -36,6 +36,12 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
 
+      - name: Clear rolling daily files
+        run: |
+          for offset in -1 0 1; do
+            rm -f "$(date -u -d "${offset} day" +'%d-%m-%Y').xml.gz"
+          done
+
       - name: Run EPG Daily Splitter
         run: python xmlmerge.py
 
@@ -46,8 +52,8 @@ jobs:
 
       - name: Commit and Force Push
         run: |
-          # Add all the new daily files
-          git add *.xml.gz
+          # Stage refreshed and removed daily files
+          git add -A -- '*.xml.gz'
           git commit -m "Update Daily EPG Partitioned Files" || echo "No changes"
           
           # Force push to ensure the partitioned strategy overwrites any old single-file history
