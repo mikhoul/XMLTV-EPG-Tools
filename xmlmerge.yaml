@@ -1,6 +1,13 @@
 files:
-  - https://i.mjh.nz/PlutoTV/fr.xml.gz
-  - https://i.mjh.nz/Plex/fr.xml.gz
-  - https://i.mjh.nz/SamsungTVPlus/fr.xml.gz
-  - https://epgshare01.online/epgshare01/epg_ripper_RAKUTEN_FR1.xml.gz
-  - https://epgshare01.online/epgshare01/epg_ripper_CA1.xml.gz
+  # IPTV-org (Reliable, but note the updated path format)
+  - https://iptv-org.github.io/epg/guides/us/google.com.xml.gz
+  - https://iptv-org.github.io/epg/guides/uk/sky.com.xml.gz
+  - https://iptv-org.github.io/epg/guides/ca/bell.ca.xml.gz
+
+  # EPGShare01 (Note the '1' at the end of the filename - required in 2026)
+  - https://epgshare01.online/epgshare01/epg_ripper_US1.xml.gz
+  - https://epgshare01.online/epgshare01/epg_ripper_UK1.xml.gz
+  - https://epgshare01.online/epgshare01/epg_ripper_ALL_SOURCES1.xml.gz
+
+  # High-Availability Alternative
+  - https://iptv-epg.org/epg.xml.gz
